@@ -1,0 +1,1 @@
+# AI-Driven-IoT-System-for-Smart-Crop-Monitoring-and-Disease-Detection
