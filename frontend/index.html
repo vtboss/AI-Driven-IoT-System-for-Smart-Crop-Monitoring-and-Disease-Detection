@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🌾 AI Crop Monitoring Dashboard</title>
+  <meta name="description" content="AI-Driven IoT System for Real-Time Crop Disease Detection and Smart Advisory" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  HEADER                                     -->
+  <!-- ═══════════════════════════════════════════ -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🌾</span>
+        <div>
+          <h1>CropSense AI</h1>
+          <p class="tagline">IoT-Driven Crop Monitoring &amp; Advisory</p>
+        </div>
+      </div>
+      <div class="status-badge" id="connectionStatus">
+        <span class="dot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  MAIN CONTENT                               -->
+  <!-- ═══════════════════════════════════════════ -->
+  <main class="main">
+
+    <!-- ─── Sensor Cards ─── -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">📡 Live Sensor Readings</h2>
+        <button class="refresh-btn" id="refreshBtn" onclick="fetchSensorData()">
+          <span id="refreshIcon">↻</span> Refresh
+        </button>
+      </div>
+
+      <div class="cards-grid">
+
+        <!-- Soil Moisture -->
+        <div class="card" id="cardMoisture">
+          <div class="card-icon">💧</div>
+          <div class="card-content">
+            <p class="card-label">Soil Moisture</p>
+            <p class="card-value" id="soilMoisture">—</p>
+            <p class="card-unit">%</p>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar" id="moistureBar"></div>
+            </div>
+            <p class="card-status" id="moistureStatus">Loading...</p>
+          </div>
+        </div>
+
+        <!-- Temperature -->
+        <div class="card" id="cardTemp">
+          <div class="card-icon">🌡️</div>
+          <div class="card-content">
+            <p class="card-label">Temperature</p>
+            <p class="card-value" id="temperature">—</p>
+            <p class="card-unit">°C</p>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar" id="tempBar"></div>
+            </div>
+            <p class="card-status" id="tempStatus">Loading...</p>
+          </div>
+        </div>
+
+        <!-- Humidity -->
+        <div class="card" id="cardHumidity">
+          <div class="card-icon">🌫️</div>
+          <div class="card-content">
+            <p class="card-label">Humidity</p>
+            <p class="card-value" id="humidity">—</p>
+            <p class="card-unit">%</p>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar" id="humidityBar"></div>
+            </div>
+            <p class="card-status" id="humidityStatus">Relative Humidity</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Last Updated -->
+      <p class="last-updated">
+        Last updated: <span id="lastUpdated">—</span>
+        &nbsp;|&nbsp; Source: <span id="dataSource" class="source-badge">dummy</span>
+      </p>
+    </section>
+
+    <!-- ─── Chatbot Section ─── -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">🤖 AI Agricultural Advisor</h2>
+        <span class="model-tag">gemma-4-31b-it · NVIDIA</span>
+      </div>
+
+      <div class="chat-container">
+
+        <!-- Chat Messages -->
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-message bot-message">
+            <span class="msg-avatar">🌿</span>
+            <div class="msg-bubble">
+              <p>Hello! I'm your AI crop advisor. I can see your current sensor readings and help you:</p>
+              <ul>
+                <li>Diagnose crop stress or disease risk</li>
+                <li>Advise on irrigation and nutrition</li>
+                <li>Answer any agriculture questions</li>
+              </ul>
+              <p>What would you like to know?</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Prompt Suggestions -->
+        <div class="quick-prompts">
+          <p class="quick-label">Quick questions:</p>
+          <div class="quick-buttons">
+            <button class="quick-btn" onclick="setQuery('Is my soil moisture level optimal for wheat?')">💧 Soil okay for wheat?</button>
+            <button class="quick-btn" onclick="setQuery('What disease risk exists with current humidity?')">🍄 Disease risk?</button>
+            <button class="quick-btn" onclick="setQuery('Should I irrigate today based on sensor data?')">🚿 Irrigate today?</button>
+            <button class="quick-btn" onclick="setQuery('Is the current temperature causing heat stress?')">🌡️ Heat stress?</button>
+          </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="chat-input-area">
+          <textarea
+            id="userQuery"
+            class="chat-input"
+            placeholder="Ask me anything about your crops... (e.g. 'Why are my leaves yellowing?')"
+            rows="2"
+            onkeydown="handleEnter(event)"
+          ></textarea>
+          <button class="send-btn" id="sendBtn" onclick="sendQuery()">
+            <span id="sendIcon">➤</span>
+          </button>
+        </div>
+        <p class="input-hint">Press <kbd>Enter</kbd> to send &nbsp;·&nbsp; <kbd>Shift+Enter</kbd> for new line</p>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  FOOTER                                     -->
+  <!-- ═══════════════════════════════════════════ -->
+  <footer class="footer">
+    <p>AI-Driven IoT System for Real-Time Crop Disease Detection &amp; Severity Prediction</p>
+    <p class="footer-sub">ESP32 · Flask · NVIDIA AI · Phase 1</p>
+  </footer>
+
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>
