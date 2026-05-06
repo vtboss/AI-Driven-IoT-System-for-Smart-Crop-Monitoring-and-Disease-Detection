@@ -55,6 +55,16 @@ def dashboard_assets(filename):
 
 
 # ──────────────────────────────────────────────
+# Route: Favicon (eliminates browser 404 noise)
+# ──────────────────────────────────────────────
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    """Return a simple SVG favicon so browsers stop logging 404."""
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌾</text></svg>'
+    return app.response_class(svg, mimetype="image/svg+xml")
+
+
+# ──────────────────────────────────────────────
 # Route: Health Check (API only)
 # ──────────────────────────────────────────────
 @app.route("/", methods=["GET"])

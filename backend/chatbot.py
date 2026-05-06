@@ -33,12 +33,19 @@ if not NVIDIA_API_KEY or NVIDIA_API_KEY == "nvapi-your-key-here":
     )
 
 # Initialize the OpenAI-compatible client pointing to NVIDIA.
-# We pass a custom httpx client to avoid any proxy-related issues
-# across openai SDK versions.
+# Timeout: 30s to connect, 60s to read response.
+# Without a timeout the request can hang indefinitely.
 client = OpenAI(
     base_url=NVIDIA_BASE_URL,
     api_key=NVIDIA_API_KEY,
-    http_client=httpx.Client()   # explicit client — avoids 'proxies' kwarg error
+    http_client=httpx.Client(
+        timeout=httpx.Timeout(
+            connect=10.0,   # max seconds to establish connection
+            read=60.0,      # max seconds to wait for response
+            write=10.0,
+            pool=5.0
+        )
+    )
 )
 
 
@@ -111,10 +118,17 @@ def get_chatbot_response(user_query: str, sensor: dict) -> str:
         error_msg = str(e)
 
         if "401" in error_msg or "Unauthorized" in error_msg:
-            return "⚠️ API key error. Please check your NVIDIA API key in chatbot.py."
+            return "⚠️ API key error. Please check your NVIDIA API key in the .env file."
         elif "404" in error_msg:
-            return "⚠️ Model not found. Check the model name in chatbot.py."
+            return (
+                "⚠️ Model not found. Check NVIDIA_MODEL in your .env file.\n"
+                "Try: meta/llama-3.1-8b-instruct or google/gemma-3-12b-it"
+            )
         elif "rate" in error_msg.lower():
             return "⚠️ Rate limit reached. Please wait a moment and try again."
+        elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+            return "⚠️ Request timed out. The NVIDIA API is slow right now — please try again in a moment."
+        elif "connect" in error_msg.lower():
+            return "⚠️ Cannot reach NVIDIA API. Check your internet connection."
         else:
             return f"⚠️ Chatbot error: {error_msg}"
