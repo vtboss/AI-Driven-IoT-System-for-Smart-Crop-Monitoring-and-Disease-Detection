@@ -1,26 +1,35 @@
-/* ================================================
-   app.js — CropSense AI Dashboard Logic
+﻿/* ================================================
+   app.js  --  CropSense AI Dashboard Logic
    AI-Driven IoT Crop Monitoring System
+   Phase 2: Connected to SQLite via Flask
    ================================================ */
 
-// ── Configuration ──────────────────────────────
-// Auto-detect backend: if served by Flask use same origin, else fallback to localhost:5000
-const API_BASE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+// ── Configuration ─────────────────────────────────────────────────────────
+// Auto-detect backend: same origin when served by Flask, else localhost:5000
+const API_BASE = (
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
+)
   ? `${window.location.protocol}//${window.location.hostname}:5000`
   : "http://localhost:5000";
-const AUTO_REFRESH_MS = 30000;             // Auto-refresh sensor data every 30s
 
-// ── State ──────────────────────────────────────
+const AUTO_REFRESH_MS = 30000;   // Auto-refresh sensor data every 30 s
+
+// ── State ─────────────────────────────────────────────────────────────────
 let latestSensorData = null;
 let autoRefreshTimer = null;
 
 
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 //  SENSOR DATA
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Fetch sensor data from Flask backend and update the UI cards.
+ * Fetch the latest sensor reading from Flask and update the UI cards.
+ * Handles three states:
+ *   1. Success with ESP32 data  -> update cards normally
+ *   2. no_data sentinel         -> show "Waiting for ESP32..." placeholder
+ *   3. Network / server error   -> mark connection offline
  */
 async function fetchSensorData() {
   const refreshBtn = document.getElementById("refreshBtn");
@@ -28,11 +37,17 @@ async function fetchSensorData() {
 
   try {
     const res = await fetch(`${API_BASE}/api/sensor-data`);
-
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();
     latestSensorData = data;
+
+    // Handle "no readings yet" sentinel from backend
+    if (data.error === "no_data") {
+      showNoDataPlaceholder();
+      setConnectionStatus(true);   // Backend is online, just no ESP32 data yet
+      return;
+    }
 
     updateSensorCards(data);
     setConnectionStatus(true);
@@ -47,11 +62,48 @@ async function fetchSensorData() {
 
 
 /**
- * Update all three sensor cards with the fetched data.
+ * Show placeholder text in all sensor cards when no ESP32 data exists yet.
+ */
+function showNoDataPlaceholder() {
+  const waiting = "...";
+  ["soilMoisture", "temperature", "humidity"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = waiting;
+  });
+  ["moistureBar", "tempBar", "humidityBar"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.width = "0%";
+  });
+
+  const moistureStatus = document.getElementById("moistureStatus");
+  const tempStatus     = document.getElementById("tempStatus");
+  if (moistureStatus) moistureStatus.textContent = "Waiting for ESP32...";
+  if (tempStatus)     tempStatus.textContent     = "Waiting for ESP32...";
+
+  const lastUpdated = document.getElementById("lastUpdated");
+  if (lastUpdated) lastUpdated.textContent = "No data yet";
+
+  const sourceEl = document.getElementById("dataSource");
+  if (sourceEl) {
+    sourceEl.textContent  = "none";
+    sourceEl.style.color  = "var(--text-dim)";
+  }
+}
+
+
+/**
+ * Update all three sensor cards with a live reading from the backend.
+ *
+ * Uses soil_moisture_pct (0-100 %) for the progress bar and display.
+ * Falls back to raw soil_moisture if pct is absent (backward-compatible).
  */
 function updateSensorCards(data) {
-  // ── Soil Moisture ──
-  const moisture = data.soil_moisture;
+  // ── Soil Moisture ────────────────────────────────────────────────────────
+  // soil_moisture_pct is the ADC-converted percentage (0-100)
+  const moisture = (data.soil_moisture_pct !== undefined)
+    ? data.soil_moisture_pct
+    : data.soil_moisture;
+
   document.getElementById("soilMoisture").textContent = moisture.toFixed(1);
   document.getElementById("moistureBar").style.width  = `${Math.min(moisture, 100)}%`;
   setMoistureColor(moisture);
@@ -60,7 +112,7 @@ function updateSensorCards(data) {
   moistureStatus.textContent = data.moisture_status || "";
   setStatusStyle(moistureStatus, data.moisture_status);
 
-  // ── Temperature ──
+  // ── Temperature ──────────────────────────────────────────────────────────
   const temp = data.temperature;
   document.getElementById("temperature").textContent = temp.toFixed(1);
   document.getElementById("tempBar").style.width = `${Math.min((temp / 50) * 100, 100)}%`;
@@ -69,13 +121,12 @@ function updateSensorCards(data) {
   tempStatus.textContent = data.temp_status || "";
   setStatusStyle(tempStatus, data.temp_status);
 
-  // Set progress bar color for temp
   const tempBar = document.getElementById("tempBar");
   if (temp > 35)      tempBar.style.background = "var(--accent-danger)";
   else if (temp < 22) tempBar.style.background = "var(--accent-blue)";
   else                tempBar.style.background = "var(--accent)";
 
-  // ── Humidity ──
+  // ── Humidity ─────────────────────────────────────────────────────────────
   const humidity = data.humidity;
   document.getElementById("humidity").textContent  = humidity.toFixed(1);
   document.getElementById("humidityBar").style.width = `${Math.min(humidity, 100)}%`;
@@ -85,12 +136,36 @@ function updateSensorCards(data) {
   else if (humidity < 40) humidityBar.style.background = "var(--accent-danger)";
   else                    humidityBar.style.background = "var(--accent-blue)";
 
-  // ── Metadata ──
-  document.getElementById("lastUpdated").textContent = data.timestamp_human || new Date().toLocaleString();
+  // ── Metadata ─────────────────────────────────────────────────────────────
+  document.getElementById("lastUpdated").textContent =
+    data.timestamp_human || new Date().toLocaleString();
 
   const sourceEl = document.getElementById("dataSource");
-  sourceEl.textContent = data.source || "dummy";
-  sourceEl.style.color = data.source === "esp32" ? "var(--accent)" : "var(--accent-blue)";
+  sourceEl.textContent = data.source || "unknown";
+  sourceEl.style.color = data.source === "esp32"
+    ? "var(--accent)"
+    : "var(--accent-blue)";
+}
+
+
+/**
+ * Fetch the last N readings for charting.
+ * Scaffolded and ready -- wire to Chart.js when charts are added.
+ *
+ * @param {number} limit - Number of readings to fetch (default 50)
+ * @returns {Array}  Array of reading objects, newest first
+ */
+async function fetchHistory(limit = 50) {
+  try {
+    const res = await fetch(`${API_BASE}/api/history?limit=${limit}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    console.log(`[History] Fetched ${data.length} readings`);
+    return data;
+  } catch (err) {
+    console.error("History fetch error:", err);
+    return [];
+  }
 }
 
 
@@ -106,7 +181,7 @@ function setMoistureColor(value) {
 
 
 /**
- * Apply warning/danger/ok style to a status badge element.
+ * Apply warning / danger / ok style to a status badge element.
  */
 function setStatusStyle(el, statusText) {
   el.classList.remove("warn", "danger");
@@ -137,9 +212,9 @@ function setConnectionStatus(online) {
 }
 
 
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 //  CHATBOT
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Handle Enter key in the textarea (send on Enter, newline on Shift+Enter).
@@ -173,14 +248,12 @@ async function sendQuery() {
 
   if (!query) return;
 
-  // Display user message
   appendMessage("user", query);
-  input.value = "";
-  input.disabled = true;
+  input.value      = "";
+  input.disabled   = true;
   sendBtn.disabled = true;
-  sendBtn.innerHTML = "⏳";
+  sendBtn.innerHTML = "&#9201;";   // hourglass icon while waiting
 
-  // Show typing indicator
   const typingId = showTypingIndicator();
 
   try {
@@ -194,27 +267,27 @@ async function sendQuery() {
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      appendMessage("bot", `⚠️ Error ${res.status}: ${errData.error || "Unknown error"}`);
+      appendMessage("bot", `[!] Error ${res.status}: ${errData.error || "Unknown error"}`);
       return;
     }
 
     const data = await res.json();
     appendMessage("bot", data.response);
 
-    // Update sensor cards if fresh data returned
-    if (data.sensor_context) {
+    // Update sensor cards with fresh context returned by the AI route
+    if (data.sensor_context && !data.sensor_context.error) {
       latestSensorData = data.sensor_context;
       updateSensorCards(data.sensor_context);
     }
 
   } catch (err) {
     removeTypingIndicator(typingId);
-    appendMessage("bot", "⚠️ Could not reach the backend. Make sure Flask is running on port 5000.");
+    appendMessage("bot", "[!] Could not reach the backend. Make sure Flask is running on port 5000.");
     console.error("Chat error:", err);
   } finally {
-    input.disabled  = false;
+    input.disabled   = false;
     sendBtn.disabled = false;
-    sendBtn.innerHTML = "➤";
+    sendBtn.innerHTML = "&#11104;";  // send icon
     input.focus();
   }
 }
@@ -222,8 +295,8 @@ async function sendQuery() {
 
 /**
  * Append a chat bubble to the message list.
- * @param {string} role  - "user" or "bot"
- * @param {string} text  - Message content (supports newlines)
+ * @param {string} role - "user" or "bot"
+ * @param {string} text - Message content (supports newlines)
  */
 function appendMessage(role, text) {
   const container = document.getElementById("chatMessages");
@@ -233,19 +306,15 @@ function appendMessage(role, text) {
 
   const avatar = document.createElement("span");
   avatar.className = "msg-avatar";
-  avatar.textContent = role === "user" ? "👨‍🌾" : "🌿";
+  avatar.innerHTML = role === "user" ? "&#128100;" : "&#129302;";
 
   const bubble = document.createElement("div");
   bubble.className = "msg-bubble";
-
-  // Convert newlines to <br> and preserve formatting
   bubble.innerHTML = escapeHTML(text).replace(/\n/g, "<br>");
 
   wrapper.appendChild(avatar);
   wrapper.appendChild(bubble);
   container.appendChild(wrapper);
-
-  // Auto-scroll to latest message
   container.scrollTop = container.scrollHeight;
 }
 
@@ -264,7 +333,7 @@ function showTypingIndicator() {
 
   const avatar = document.createElement("span");
   avatar.className = "msg-avatar";
-  avatar.textContent = "🌿";
+  avatar.innerHTML = "&#129302;";
 
   const bubble = document.createElement("div");
   bubble.className = "msg-bubble";
@@ -297,31 +366,29 @@ function removeTypingIndicator(id) {
  */
 function escapeHTML(str) {
   return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g,  "&amp;")
+    .replace(/</g,  "&lt;")
+    .replace(/>/g,  "&gt;")
+    .replace(/"/g,  "&quot;");
 }
 
 
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 //  INIT
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Initialize the dashboard on page load.
  */
 function init() {
-  // Fetch sensor data immediately
   fetchSensorData();
-
-  // Auto-refresh every 30 seconds
   autoRefreshTimer = setInterval(fetchSensorData, AUTO_REFRESH_MS);
 
-  console.log("🌾 CropSense AI Dashboard initialized");
-  console.log(`   Backend: ${API_BASE}`);
-  console.log(`   Auto-refresh: every ${AUTO_REFRESH_MS / 1000}s`);
+  console.log("CropSense AI Dashboard initialized (Phase 2 -- SQLite)");
+  console.log(`   Backend      : ${API_BASE}`);
+  console.log(`   Auto-refresh : every ${AUTO_REFRESH_MS / 1000}s`);
 }
 
 // Start on DOM ready
 document.addEventListener("DOMContentLoaded", init);
+
