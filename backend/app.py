@@ -1,4 +1,4 @@
-﻿"""
+"""
 ==============================================================
  app.py  --  Flask Backend
  AI-Driven IoT Crop Monitoring System
@@ -6,13 +6,14 @@
  Phase 2  |  ESP32 -> SQLite -> Dashboard
 ----------------------------------------------------------
  Routes:
-   GET  /                    Health check
-   GET  /dashboard           Serve dashboard HTML
-   GET  /dashboard/<file>    Serve dashboard assets
-   GET  /api/sensor-data     Return latest reading from DB
-   POST /api/sensor-data     Receive ESP32 JSON, store in DB
-   GET  /api/history         Return last N readings for charts
-   POST /api/chat            AI advisory with sensor context
+   GET  /                       Health check
+   GET  /dashboard              Serve dashboard HTML
+   GET  /dashboard/<file>       Serve dashboard assets
+   GET  /api/sensor-data        Return latest reading from DB
+   POST /api/sensor-data        Receive ESP32 JSON, store in DB
+   GET  /api/history            Return last N readings for charts
+   POST /api/chat               AI advisory with sensor context
+   POST /api/camera/capture     Trigger ESP32-CAM still capture
  Run:  python app.py
  URL:  http://localhost:5000
 ==============================================================
@@ -22,8 +23,12 @@ import io
 # Fix emoji printing on Windows terminals (cp1252 -> utf-8)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, url_for
 import os
+from pathlib import Path
+from datetime import datetime
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
 from dotenv import load_dotenv
 from flask_cors import CORS
 
@@ -43,6 +48,18 @@ CORS(app)   # Allow any origin (dashboard served via Flask, ESP32 from same LAN)
 
 # Create sensor_data.db + table if they do not exist
 init_db()
+
+# ── Camera Configuration ────────────────────────────────────────────────────
+# IP of the ESP32-CAM on the local network.  Change in backend/.env when the
+# DHCP lease changes -- no Flask restart needed if using python-dotenv override.
+CAMERA_IP          = os.getenv("CAMERA_IP", "10.5.135.90")
+CAMERA_CAPTURE_URL = f"http://{CAMERA_IP}/capture"
+
+# Still images are saved inside the frontend's static tree so Flask can serve
+# them through the existing /dashboard/<path> route without a second server.
+_CAPTURES_REL = "captures"                                  # relative to frontend/
+CAPTURE_DIR   = Path(FRONTEND_DIR) / _CAPTURES_REL
+CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ── Route: Serve Dashboard ──────────────────────────────────────────────────
@@ -180,6 +197,89 @@ def history():
     return jsonify(rows), 200
 
 
+# ── Route: POST /api/camera/capture ────────────────────────────────────────
+@app.route("/api/camera/capture", methods=["POST"])
+def capture_camera_image():
+    """
+    Ask the ESP32-CAM to take a still image and save it locally.
+
+    Steps:
+      1. Reload CAMERA_IP from .env (supports IP change without restart).
+      2. GET http://<CAMERA_IP>/capture from the ESP32-CAM firmware.
+      3. Validate the response is a real JPEG (magic bytes \xff\xd8\xff).
+      4. Save the image under frontend/captures/<timestamp>.jpg.
+      5. Return the relative URL so the dashboard can display it.
+
+    Response (200):
+        { "success": true, "filename": "20261027_213000_000000.jpg",
+          "image_url": "/dashboard/captures/20261027_213000_000000.jpg" }
+
+    Response (502) on camera error:
+        { "success": false, "error": "...", "details": "..." }
+    """
+    # Re-read camera IP so a .env edit takes effect without restarting Flask.
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
+    camera_ip  = os.getenv("CAMERA_IP", CAMERA_IP)
+    capture_url = f"http://{camera_ip}/capture"
+
+    try:
+        req = Request(capture_url, headers={"Accept": "image/jpeg"}, method="GET")
+        with urlopen(req, timeout=15) as resp:
+            image_bytes  = resp.read()
+            content_type = resp.headers.get("Content-Type", "").lower()
+
+        # Validate: must start with JPEG magic bytes.
+        if not image_bytes.startswith(b"\xff\xd8\xff"):
+            app.logger.warning("Camera response did not contain JPEG magic bytes")
+            return jsonify({
+                "success": False,
+                "error":   "Camera did not return a valid JPEG."
+            }), 502
+
+        # Warn if Content-Type is set but wrong (do not reject -- some firmware omits it).
+        if content_type and "image/jpeg" not in content_type:
+            app.logger.warning("Unexpected Content-Type from camera: %s", content_type)
+
+        # Save with a timestamp filename (microseconds ensure uniqueness).
+        filename    = datetime.now().strftime("%Y%m%d_%H%M%S_%f") + ".jpg"
+        output_path = CAPTURE_DIR / filename
+        output_path.write_bytes(image_bytes)
+
+        # The file is served by the existing /dashboard/<path:filename> route.
+        image_url = f"/dashboard/{_CAPTURES_REL}/{filename}"
+
+        app.logger.info("Capture saved: %s (%d bytes)", filename, len(image_bytes))
+        return jsonify({
+            "success":   True,
+            "filename":  filename,
+            "image_url": image_url
+        }), 200
+
+    except (HTTPError, URLError) as exc:
+        app.logger.exception("Camera request failed: %s", exc)
+        return jsonify({
+            "success": False,
+            "error":   "Could not reach ESP32-CAM.",
+            "details": str(exc)
+        }), 502
+
+    except TimeoutError as exc:
+        app.logger.exception("Camera request timed out")
+        return jsonify({
+            "success": False,
+            "error":   "ESP32-CAM timed out (15 s). Is the camera powered and on Wi-Fi?",
+            "details": str(exc)
+        }), 502
+
+    except OSError as exc:
+        app.logger.exception("Failed to save captured image")
+        return jsonify({
+            "success": False,
+            "error":   "Image saved failed on server.",
+            "details": str(exc)
+        }), 500
+
+
 # ── Route: POST /api/chat ───────────────────────────────────────────────────
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -224,6 +324,8 @@ if __name__ == "__main__":
     print(f" Sensor (POST) : http://localhost:{port}/api/sensor-data  <- ESP32")
     print(f" History       : http://localhost:{port}/api/history")
     print(f" Chatbot       : http://localhost:{port}/api/chat  [POST]")
+    print(f" Camera capture: http://localhost:{port}/api/camera/capture  [POST]")
+    print(f" Camera IP     : {CAMERA_IP}  (change CAMERA_IP in backend/.env)")
     print(f" Dashboard     : http://localhost:{port}/dashboard")
     print("=" * 58)
     app.run(debug=debug, host="0.0.0.0", port=port, threaded=True)

@@ -97,6 +97,42 @@
       </p>
     </section>
 
+    <!-- ─── Camera Capture Section ─── -->
+    <section class="section" id="camera-section">
+      <div class="section-header">
+        <h2 class="section-title">📷 Tomato Leaf Monitoring</h2>
+        <button class="refresh-btn" id="capture-leaf-btn" type="button">
+          📸 Capture Leaf Image
+        </button>
+      </div>
+
+      <div class="card" style="flex-direction: column; gap: 1rem;">
+
+        <!-- Status line -->
+        <p id="camera-status"
+           style="font-size: 0.82rem; color: var(--text-muted);"
+           aria-live="polite">
+          Camera ready. Click "Capture Leaf Image" to take a still photo.
+        </p>
+
+        <!-- Preview: hidden until a capture succeeds -->
+        <img
+          id="captured-leaf-image"
+          alt="Latest captured tomato leaf"
+          hidden
+          style="max-width: 100%; height: auto; border-radius: var(--radius-sm);
+                 border: 1px solid var(--border); display: block;"
+        />
+
+        <!-- Caption shown below the image -->
+        <p id="camera-filename"
+           hidden
+           style="font-size: 0.72rem; color: var(--text-dim); margin-top: -0.5rem;">
+        </p>
+
+      </div>
+    </section>
+
     <!-- ─── Chatbot Section ─── -->
     <section class="section">
       <div class="section-header">
@@ -158,7 +194,7 @@
   <!-- ═══════════════════════════════════════════ -->
   <footer class="footer">
     <p>AI-Driven IoT System for Real-Time Crop Disease Detection &amp; Severity Prediction</p>
-    <p class="footer-sub">ESP32 · Flask · NVIDIA AI · Phase 1</p>
+    <p class="footer-sub">ESP32 · ESP32-CAM · Flask · NVIDIA AI · Phase 2</p>
   </footer>
 
   <script src="/dashboard/app.js"></script>

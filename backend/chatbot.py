@@ -134,7 +134,8 @@ def get_chatbot_response(user_query: str, sensor: dict) -> str:
             ],
             temperature=0.6,
             top_p=0.9,
-            max_tokens=512,    # NOTE: use max_tokens, not max_completion_tokens
+            max_tokens=300, 
+            reasoning_effort="low",    # NOTE: use max_tokens, not max_completion_tokens
         )
 
         return response.choices[0].message.content.strip()

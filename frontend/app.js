@@ -1,4 +1,4 @@
-﻿/* ================================================
+/* ================================================
    app.js  --  CropSense AI Dashboard Logic
    AI-Driven IoT Crop Monitoring System
    Phase 2: Connected to SQLite via Flask
@@ -13,7 +13,7 @@ const API_BASE = (
   ? `${window.location.protocol}//${window.location.hostname}:5000`
   : "http://localhost:5000";
 
-const AUTO_REFRESH_MS = 30000;   // Auto-refresh sensor data every 30 s
+const AUTO_REFRESH_MS = 10000;   // Auto-refresh sensor data every 10 s (matches Arduino POST interval)
 
 // ── State ─────────────────────────────────────────────────────────────────
 let latestSensorData = null;
@@ -391,4 +391,66 @@ function init() {
 
 // Start on DOM ready
 document.addEventListener("DOMContentLoaded", init);
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CAMERA CAPTURE
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Wire up the "Capture Leaf Image" button after the DOM is ready.
+ * Calls POST /api/camera/capture (Flask), which in turn GETs a still
+ * JPEG from the ESP32-CAM and saves it, then returns the URL.
+ *
+ * The button guard (disabled during request) prevents double-submissions.
+ * Status text uses aria-live="polite" (set in HTML) so screen readers announce it.
+ */
+document.addEventListener("DOMContentLoaded", () => {
+  const captureBtn = document.getElementById("capture-leaf-btn");
+  if (!captureBtn) return;   // section not present in this HTML variant
+
+  captureBtn.addEventListener("click", async () => {
+    const statusEl   = document.getElementById("camera-status");
+    const previewEl  = document.getElementById("captured-leaf-image");
+    const captionEl  = document.getElementById("camera-filename");
+
+    // Prevent double-click while request is in flight.
+    captureBtn.disabled = true;
+    captureBtn.textContent = "⏳ Capturing...";
+    statusEl.textContent = "Requesting image from ESP32-CAM…";
+    statusEl.style.color = "var(--text-muted)";
+
+    try {
+      const res = await fetch(`${API_BASE}/api/camera/capture`, {
+        method: "POST"
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || `Server error ${res.status}`);
+      }
+
+      // Show the captured image.
+      previewEl.src    = result.image_url;
+      previewEl.hidden = false;
+
+      // Show filename beneath the image.
+      captionEl.textContent = `Saved: ${result.filename}`;
+      captionEl.hidden = false;
+
+      statusEl.textContent = "✅ Capture successful.";
+      statusEl.style.color = "var(--accent)";
+
+    } catch (err) {
+      statusEl.textContent = `❌ Capture failed: ${err.message}`;
+      statusEl.style.color = "var(--accent-danger)";
+      console.error("[Camera] Capture error:", err);
+    } finally {
+      captureBtn.disabled = false;
+      captureBtn.textContent = "📸 Capture Leaf Image";
+    }
+  });
+});
+
 
